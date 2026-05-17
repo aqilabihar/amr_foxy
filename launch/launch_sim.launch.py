@@ -26,7 +26,7 @@ def generate_launch_description():
     )
 
     # Include the Gazebo launch file, provided by the gazebo_ros package
-    world_path = os.path.join(get_package_share_directory(package_name), 'worlds', 'empty.world')
+    world_path = os.path.join(get_package_share_directory(package_name), 'worlds', 'maze.world')
     # Include the Gazebo launch file, provided by the gazebo_ros package
     gazebo = IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([os.path.join(
