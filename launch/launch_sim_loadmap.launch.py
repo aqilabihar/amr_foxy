@@ -8,6 +8,10 @@ from launch_ros.actions import Node
 def generate_launch_description():
     pkg_dir = get_package_share_directory('suraqil_bot')
     map_path = os.path.join(pkg_dir, 'maps', 'peta_pertama.yaml')
+    
+    # Explicitly point to your updated parameters file
+    nav2_params_path = os.path.join(pkg_dir, 'config', 'nav2_params.yaml')
+    twist_mux_params = os.path.join(pkg_dir, 'config', 'twist_mux.yaml')
 
     # 1. Gazebo Sim
     sim = IncludeLaunchDescription(
@@ -21,48 +25,40 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True}]
     )
 
-    # 3. Manual Map Server Node (Bypasses nav2_params.yaml completely)
-    map_server_node = Node(
-        package='nav2_map_server',
-        executable='map_server',
-        name='map_server',
-        output='screen',
-        parameters=[{
-            'yaml_filename': map_path,
-            'use_sim_time': True
-        }]
+    # 3. Localization (Passing your nav2_params.yaml explicitly)
+    localization = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([os.path.join(pkg_dir, 'launch', 'localization_launch.py')]),
+        launch_arguments={
+            'use_sim_time': 'true', 
+            'autostart': 'true', 
+            'map': map_path,
+            'params_file': nav2_params_path
+        }.items()
     )
+    delay_loc = TimerAction(period=5.0, actions=[localization])
 
-    # 4. Manual Lifecycle Manager Node
-    lifecycle_manager_node = Node(
-        package='nav2_lifecycle_manager',
-        executable='lifecycle_manager',
-        name='lifecycle_manager_map',
-        output='screen',
-        parameters=[{
-            'use_sim_time': True,
-            'autostart': True,
-            'node_names': ['map_server']
-        }]
+    # 4. Nav2 Navigation Stack (Passing your nav2_params.yaml explicitly)
+    navigation = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([os.path.join(pkg_dir, 'launch', 'navigation_launch.py')]),
+        launch_arguments={
+            'use_sim_time': 'true', 
+            'autostart': 'true',
+            'params_file': nav2_params_path
+        }.items()
     )
+    delay_nav = TimerAction(period=8.0, actions=[navigation])
 
-    # Group map nodes together with a 5-second delay for Gazebo clock stability
-    delay_map_nodes = TimerAction(
-        period=5.0,
-        actions=[map_server_node, lifecycle_manager_node]
-    )
-
-    # 5. Fake TF Link (Connect map -> odom)
-    fake_tf = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom'],
-        parameters=[{'use_sim_time': True}]
+    # 5. Twist Mux 
+    twist_mux_node = Node(
+        package='twist_mux', executable='twist_mux', name='twist_mux', output='screen',
+        parameters=[twist_mux_params, {'use_sim_time': True}],
+        remappings=[('cmd_vel_out', 'cmd_vel')]
     )
 
     return LaunchDescription([
         sim,
         rviz,
-        delay_map_nodes,
-        fake_tf
+        delay_loc,
+        delay_nav,
+        twist_mux_node
     ])
