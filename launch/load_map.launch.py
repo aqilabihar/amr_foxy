@@ -1,45 +1,52 @@
 import os
-from launch import LaunchDescription
-from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+from nav2_common.launch import RewrittenYaml
 
 def generate_launch_description():
-    # Pastikan nama paket sesuai dengan di CMakeLists.txt (suraqil_bot atau amr_foxy)
-    package_name = 'suraqil_bot' 
+    bringup_dir = get_package_share_directory('suraqil_bot')
+
+    namespace = LaunchConfiguration('namespace')
+    map_yaml_file = LaunchConfiguration('map')
+    use_sim_time = LaunchConfiguration('use_sim_time')
+    autostart = LaunchConfiguration('autostart')
+    params_file = LaunchConfiguration('params_file')
     
-    # Jalur langsung ke file peta di folder src agar aman dari colcon clean
-    map_file_path = os.path.join(os.path.expanduser('~'), 'amr_ws', 'src', 'amr_foxy', 'maps', 'peta_pertama.yaml')
+    lifecycle_nodes = ['map_server']
 
-    # 1. Node Map Server (Pemuat Gambar Peta)
-    map_server_node = Node(
-        package='nav2_map_server',
-        executable='map_server',
-        name='map_server',
-        output='screen',
-        parameters=[{'use_sim_time': True},
-                    {'yaml_filename': map_file_path}]
-    )
+    param_substitutions = {
+        'use_sim_time': use_sim_time,
+        'yaml_filename': map_yaml_file}
 
-    # 2. Node Lifecycle Manager (Pembangun Status Map Server)
-    lifecycle_manager_node = Node(
-        package='nav2_lifecycle_manager',
-        executable='lifecycle_manager',
-        name='lifecycle_manager_map',
-        output='screen',
-        parameters=[{'use_sim_time': True},
-                    {'autostart': True},
-                    {'node_names': ['map_server']}]
-    )
-
-    # 3. Jembatan Koordinat Sementara (Map -> Odom)
-    static_tf_node = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom']
-    )
+    configured_params = RewrittenYaml(
+        source_file=params_file,
+        root_key=namespace,
+        param_rewrites=param_substitutions,
+        convert_types=True)
 
     return LaunchDescription([
-        map_server_node,
-        lifecycle_manager_node,
-        static_tf_node
+        DeclareLaunchArgument('namespace', default_value=''),
+        DeclareLaunchArgument('map', default_value=os.path.join(bringup_dir, 'maps', 'peta_pertama.yaml')),
+        DeclareLaunchArgument('use_sim_time', default_value='true'),
+        DeclareLaunchArgument('autostart', default_value='true'),
+        DeclareLaunchArgument('params_file', default_value=os.path.join(bringup_dir, 'config', 'nav2_params.yaml')),
+
+        Node(
+            package='nav2_map_server',
+            executable='map_server',
+            name='map_server',
+            output='screen',
+            parameters=[configured_params]),
+
+        Node(
+            package='nav2_lifecycle_manager',
+            executable='lifecycle_manager',
+            name='lifecycle_manager_map',
+            output='screen',
+            parameters=[{'use_sim_time': use_sim_time},
+                        {'autostart': autostart},
+                        {'node_names': lifecycle_nodes}])
     ])
